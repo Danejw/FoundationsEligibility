@@ -8,7 +8,7 @@ public class TicTacToeTrigger : MonoBehaviour
 
 	[SerializeField] public int index;
 
-    [SerializeField] private bool canClick = true;
+    [SerializeField] public bool canClick = true;
 
 	public delegate void TriggerCLicked(GameObject gameobject);
 	public static event TriggerCLicked onTriggerCLicked;
@@ -20,7 +20,6 @@ public class TicTacToeTrigger : MonoBehaviour
 		if (canClick)
 		{
 			onTriggerCLicked?.Invoke(gameObject);
-			canClick = false;
 			if (debug) Debug.Log("Trigger Hit " + index);
 		}
 	}

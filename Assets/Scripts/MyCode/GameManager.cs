@@ -34,12 +34,24 @@ public class GameManager : MonoBehaviour
     private bool aiThnking = false;
     
     [Header("Picks")]
-    public List<GameObject> allPicks;
+    public List<GameObject> allPossiblePicks;
     [SerializeField] List<GameObject> availablePicks;
     [SerializeField] List<GameObject> playerPicks = new List<GameObject>();
     [SerializeField] List<GameObject> aiPicks = new List<GameObject>();
 
-    private List<int>[] winningPicks = new List<int>[8];
+    
+
+    private List<GameObject> instantiatedPieces = new List<GameObject>();
+
+
+    [SerializeField] private List<List<int>> winningPicks;
+    public class WinningSequence
+    {
+        public int consecutive;
+        public List<int> sequence = new List<int>();
+    }
+
+
 
     private void Awake()
     {
@@ -76,11 +88,23 @@ public class GameManager : MonoBehaviour
             if ( pick.GetComponent<TicTacToeTrigger>().index)
         }
         */
+       
+        if (availablePicks.Count <= 0)
+            EndGame();
     }
+
+
 
     private void InitGame()
     {
         SetWinningPicks();
+
+        // set available pieces
+        foreach (var piece in allPossiblePicks)
+        {
+            availablePicks.Add(piece);
+            piece.GetComponent<TicTacToeTrigger>().canClick = true;
+        }
 
         // sets pieces
         if (playerPiece == Piece.circle) aiPiece = Piece.cross;
@@ -90,9 +114,6 @@ public class GameManager : MonoBehaviour
         // randomizes who plays first move
         isPlayersTurn = UnityEngine.Random.value > 0.5f;
 
-        // set available pieces
-        availablePicks = allPicks;
-
         // clear past lists
         playerPicks.Clear();
         aiPicks.Clear();
@@ -101,45 +122,31 @@ public class GameManager : MonoBehaviour
     private void SetWinningPicks()
     {
         // set winning picks
-        winningPicks[0] = new List<int>();
-        winningPicks[0].Add(0);
-        winningPicks[0].Add(1);
-        winningPicks[0].Add(2);
+        winningPicks = new List<List<int>>();
 
-        winningPicks[1] = new List<int>();
-        winningPicks[1].Add(3);
-        winningPicks[1].Add(4);
-        winningPicks[1].Add(5);
+        List<int> seq0 = new List<int> { 0, 1, 2 };
+        winningPicks.Add(seq0);
 
-        winningPicks[2] = new List<int>();
-        winningPicks[2].Add(6);
-        winningPicks[2].Add(7);
-        winningPicks[2].Add(8);
+        List<int> seq1 = new List<int> { 3, 4, 5 };
+        winningPicks.Add(seq0);
 
-        winningPicks[3] = new List<int>();
-        winningPicks[3].Add(0);
-        winningPicks[3].Add(3);
-        winningPicks[3].Add(6);
+        List<int> seq2 = new List<int> { 6, 7, 8 };
+        winningPicks.Add(seq0);
 
-        winningPicks[4] = new List<int>();
-        winningPicks[4].Add(1);
-        winningPicks[4].Add(4);
-        winningPicks[4].Add(7);
+        List<int> seq3 = new List<int> { 0, 3, 6 };
+        winningPicks.Add(seq0);
 
-        winningPicks[5] = new List<int>();
-        winningPicks[5].Add(2);
-        winningPicks[5].Add(5);
-        winningPicks[5].Add(8);
+        List<int> seq4 = new List<int> { 1, 4, 7 };
+        winningPicks.Add(seq0);
 
-        winningPicks[6] = new List<int>();
-        winningPicks[6].Add(0);
-        winningPicks[6].Add(4);
-        winningPicks[6].Add(8);
+        List<int> seq5 = new List<int> { 2, 5, 8 };
+        winningPicks.Add(seq0);
 
-        winningPicks[7] = new List<int>();
-        winningPicks[7].Add(2);
-        winningPicks[7].Add(4);
-        winningPicks[7].Add(6);
+        List<int> seq6 = new List<int> { 0, 4, 8 };
+        winningPicks.Add(seq0);
+
+        List<int> seq7 = new List<int> { 6, 4, 2 };
+        winningPicks.Add(seq0);
     }
 
     private void playerClickedTrigger(GameObject pieceObj)
@@ -149,6 +156,8 @@ public class GameManager : MonoBehaviour
 
         // check to see if its the player's turn
         if (!isPlayersTurn) return;
+
+        pieceObj.GetComponent<TicTacToeTrigger>().canClick = false;
 
         // place the right player piece
         switch (playerPiece)
@@ -175,6 +184,11 @@ public class GameManager : MonoBehaviour
         playAudio.Play();
 
         // play particle
+
+        // Check if the player won
+        //CheckForWinner();
+
+        
     }
 
 
@@ -186,6 +200,8 @@ public class GameManager : MonoBehaviour
 
         // pick
         var pick = UnityEngine.Random.Range(0, availablePicks.Count - 1);
+
+        availablePicks[pick].GetComponent<TicTacToeTrigger>().canClick = false;
 
         yield return new WaitForSeconds(1);
 
@@ -207,7 +223,7 @@ public class GameManager : MonoBehaviour
         // remove pick from availble picks
         availablePicks.Remove(availablePicks[pick]);
 
-        // iterate to other player's turn
+        // iterate to ai's turn
         isPlayersTurn = true;
         aiThnking = false;
 
@@ -216,13 +232,47 @@ public class GameManager : MonoBehaviour
         playAudio.Play();
 
         // play particle
+
+        // Check if the ai has won
+        //CheckForWinner();
     }
 
     private void SetVisual(GameObject piece, Vector3 position)
     {
-        Instantiate(piece, position, Quaternion.identity);
+        instantiatedPieces.Add(Instantiate(piece, position, Quaternion.identity));
     }
 
 
+    [SerializeField] private int consecutive = 0;
+    private void CheckForWinner()
+    {
+       
+        // Go through each set of winngin picks
+        foreach (List<int> list in winningPicks)
+        {        
+            // Go through each set of player picks
+            foreach (GameObject pick in playerPicks)
+            {            
+                // Check to see if each player pick is in the winning pick list
+                if (list.Contains(pick.GetComponent<TicTacToeTrigger>().index))
+                {
+                    consecutive++;
+                    Debug.Log("Found Pick " + pick);
+                }
+                else
+                {
+                    consecutive = 0;
+                }
+            }
+        }
+    }
+
+    private void EndGame()
+    {
+        foreach (var piece in instantiatedPieces)
+            Destroy(piece.gameObject);
+
+        InitGame();
+    }
 
 }

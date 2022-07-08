@@ -2899,7 +2899,7 @@ MonoBehaviour:
   winningSound: {fileID: 8300000, guid: f15a5678b3391754dbeb590fc58ff089, type: 3}
   losingSound: {fileID: 8300000, guid: 1c65d170441c6a6478c14e568323bb15, type: 3}
   isPlayersTurn: 0
-  allPicks:
+  allPossiblePicks:
   - {fileID: 1300775585}
   - {fileID: 1375841065}
   - {fileID: 704061765}
@@ -2912,6 +2912,7 @@ MonoBehaviour:
   availablePicks: []
   playerPicks: []
   aiPicks: []
+  consecutive: 0
 --- !u!4 &2053529901
 Transform:
   m_ObjectHideFlags: 0
