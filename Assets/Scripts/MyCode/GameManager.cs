@@ -9,9 +9,17 @@ public class GameManager : MonoBehaviour
 {
     public enum Piece
     {
+        none,
         cross,
         circle
     }
+
+    public enum Difficulty
+    {
+        easy,
+        hard
+    }
+    public Difficulty difficulty = Difficulty.easy;
 
     [Header("Pieces")]
     public Piece playerPiece;
@@ -28,6 +36,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] private AudioClip aiPlaySound;
     [SerializeField] private AudioClip winningSound;
     [SerializeField] private AudioClip losingSound;
+    [SerializeField] private AudioClip drawSound;
+    [SerializeField] private AudioClip startSound;
 
 
     [SerializeField] private bool isPlayersTurn;
@@ -39,19 +49,29 @@ public class GameManager : MonoBehaviour
     [SerializeField] List<GameObject> playerPicks = new List<GameObject>();
     [SerializeField] List<GameObject> aiPicks = new List<GameObject>();
 
-    
-
     private List<GameObject> instantiatedPieces = new List<GameObject>();
 
 
-    [SerializeField] private List<List<int>> winningPicks;
+    public delegate void GameEnded(Piece winner);
+    public static event GameEnded onGameEnded;
+
+    public delegate void GamePaused();
+    public static event GamePaused onGamePaused;
+
+    public delegate void GameStarted();
+    public static event GameStarted onGameStarted;
+
+    [Serializable]
     public class WinningSequence
     {
-        public int consecutive;
-        public List<int> sequence = new List<int>();
+        public bool isSequenceOpen = true;
+        public int playerConsecutive = 0;
+        public int aiConsecutive = 0;
+        public List<int> sequence;
     }
+    [SerializeField] private WinningSequence[] winningSequences;
 
-
+    [SerializeField] private bool gamePaused;
 
     private void Awake()
     {
@@ -63,7 +83,8 @@ public class GameManager : MonoBehaviour
     {
         TicTacToeTrigger.onTriggerCLicked += playerClickedTrigger;
 
-        InitGame();
+        onGamePaused?.Invoke();
+        gamePaused = true;
     }
 
     private void OnDestroy()
@@ -89,21 +110,26 @@ public class GameManager : MonoBehaviour
         }
         */
        
-        if (availablePicks.Count <= 0)
-            EndGame();
+        if (availablePicks.Count <= 0 && !gamePaused)
+            StartCoroutine(EndGameSequence(Piece.none));
     }
 
-
-
-    private void InitGame()
+    public void InitGame()
     {
-        SetWinningPicks();
-
         // set available pieces
+        availablePicks.Clear();
         foreach (var piece in allPossiblePicks)
         {
             availablePicks.Add(piece);
             piece.GetComponent<TicTacToeTrigger>().canClick = true;
+        }
+
+        // reset sequences
+        foreach (var seq in winningSequences)
+        {
+            seq.playerConsecutive = 0;
+            seq.aiConsecutive = 0;
+            seq.isSequenceOpen = true;
         }
 
         // sets pieces
@@ -117,36 +143,14 @@ public class GameManager : MonoBehaviour
         // clear past lists
         playerPicks.Clear();
         aiPicks.Clear();
-    }
 
-    private void SetWinningPicks()
-    {
-        // set winning picks
-        winningPicks = new List<List<int>>();
+        gamePaused = false;
 
-        List<int> seq0 = new List<int> { 0, 1, 2 };
-        winningPicks.Add(seq0);
+        onGameStarted?.Invoke();
 
-        List<int> seq1 = new List<int> { 3, 4, 5 };
-        winningPicks.Add(seq0);
-
-        List<int> seq2 = new List<int> { 6, 7, 8 };
-        winningPicks.Add(seq0);
-
-        List<int> seq3 = new List<int> { 0, 3, 6 };
-        winningPicks.Add(seq0);
-
-        List<int> seq4 = new List<int> { 1, 4, 7 };
-        winningPicks.Add(seq0);
-
-        List<int> seq5 = new List<int> { 2, 5, 8 };
-        winningPicks.Add(seq0);
-
-        List<int> seq6 = new List<int> { 0, 4, 8 };
-        winningPicks.Add(seq0);
-
-        List<int> seq7 = new List<int> { 6, 4, 2 };
-        winningPicks.Add(seq0);
+        // play sound
+        playAudio.clip = startSound;
+        playAudio.Play();
     }
 
     private void playerClickedTrigger(GameObject pieceObj)
@@ -186,42 +190,65 @@ public class GameManager : MonoBehaviour
         // play particle
 
         // Check if the player won
-        //CheckForWinner();
-
-        
+        foreach (var seq in winningSequences)
+        {
+            if (seq.sequence.Contains(pieceObj.GetComponent<TicTacToeTrigger>().index))
+            {
+                seq.playerConsecutive++;
+                if (seq.playerConsecutive >= 3)
+                    StartCoroutine(EndGameSequence(playerPiece));
+                if (seq.playerConsecutive + seq.aiConsecutive >= 3)
+                    seq.isSequenceOpen = false;
+            }
+        }
     }
-
 
     private IEnumerator AiPick()
     {
+        if (gamePaused) yield break;
         if (availablePicks.Count == 0) yield break;
 
         aiThnking = true;
 
-        // pick
-        var pick = UnityEngine.Random.Range(0, availablePicks.Count - 1);
+        
+        // Ai pick
+        GameObject objPick = UpdateBestNextMoves();
+        if (difficulty == Difficulty.hard)
+        {
+            if (!objPick)
+            {
+                // random
+                int pick = UnityEngine.Random.Range(0, availablePicks.Count - 1);
+                objPick = availablePicks[pick];
+            }
+        }
+        // easy : Random
+        else
+        {
+            int pick = UnityEngine.Random.Range(0, availablePicks.Count - 1);
+            objPick = availablePicks[pick];
+        }
+        
 
-        availablePicks[pick].GetComponent<TicTacToeTrigger>().canClick = false;
+        Debug.Log("Pick : " + objPick);
+
+        objPick.GetComponent<TicTacToeTrigger>().canClick = false;
 
         yield return new WaitForSeconds(1);
-
 
         // place the right ai piece
         switch (aiPiece)
         {
             case Piece.cross:
-                SetVisual(xPiece, availablePicks[pick].transform.position);
+                SetVisual(xPiece, objPick.transform.position);
                 break;
             case Piece.circle:
-                SetVisual(oPiece, availablePicks[pick].transform.position);
+                SetVisual(oPiece, objPick.transform.position);
                 break;
         }
 
         // add pick to player's list of picks
-        aiPicks.Add(availablePicks[pick]);
-
-        // remove pick from availble picks
-        availablePicks.Remove(availablePicks[pick]);
+        aiPicks.Add(objPick);
 
         // iterate to ai's turn
         isPlayersTurn = true;
@@ -234,7 +261,20 @@ public class GameManager : MonoBehaviour
         // play particle
 
         // Check if the ai has won
-        //CheckForWinner();
+        foreach (var seq in winningSequences)
+        {
+            if (seq.sequence.Contains(objPick.GetComponent<TicTacToeTrigger>().index))
+            {
+                seq.aiConsecutive++;
+                if (seq.aiConsecutive >= 3)
+                    StartCoroutine(EndGameSequence(aiPiece));
+                if (seq.playerConsecutive + seq.aiConsecutive >= 3)
+                    seq.isSequenceOpen = false;
+            }
+        }
+
+        // remove pick from availble picks
+        availablePicks.Remove(objPick);
     }
 
     private void SetVisual(GameObject piece, Vector3 position)
@@ -242,37 +282,95 @@ public class GameManager : MonoBehaviour
         instantiatedPieces.Add(Instantiate(piece, position, Quaternion.identity));
     }
 
-
-    [SerializeField] private int consecutive = 0;
-    private void CheckForWinner()
+    private IEnumerator EndGameSequence(Piece winner)
     {
-       
-        // Go through each set of winngin picks
-        foreach (List<int> list in winningPicks)
-        {        
-            // Go through each set of player picks
-            foreach (GameObject pick in playerPicks)
-            {            
-                // Check to see if each player pick is in the winning pick list
-                if (list.Contains(pick.GetComponent<TicTacToeTrigger>().index))
+        gamePaused = true;
+
+        onGameEnded?.Invoke(winner);
+
+        // play sound
+        if (winner == playerPiece)
+        {
+            playAudio.clip = winningSound;
+            playAudio.Play();
+        }
+        else if (winner == aiPiece)
+        {
+            playAudio.clip = losingSound;
+            playAudio.Play();
+        }
+        else if (winner == Piece.none)
+        {
+            playAudio.clip = drawSound;
+            playAudio.Play();
+        }
+
+
+        yield return new WaitForSeconds(5);
+
+        foreach (var piece in instantiatedPieces)
+            Destroy(piece.gameObject);
+    }
+
+    public void SetDifficultyHard(bool value)
+    {
+        if (value)
+            difficulty = Difficulty.hard;
+
+        if (!value)
+            difficulty = Difficulty.easy;
+    }
+
+
+    [SerializeField] private List<GameObject> bestNextMoves = new List<GameObject>();
+    private GameObject UpdateBestNextMoves()
+    {
+        bestNextMoves.Clear();
+
+        // iterate through the sequences and order the indexs according to consecutive counts
+        foreach(var seq in winningSequences)
+        {
+            if (seq.isSequenceOpen)
+            {               
+                if (seq.aiConsecutive == 2)
                 {
-                    consecutive++;
-                    Debug.Log("Found Pick " + pick);
+                    foreach (var index in seq.sequence)
+                    {
+                        // put on top of list
+                        foreach (var obj in availablePicks)
+                        {
+                            if (obj.GetComponent<TicTacToeTrigger>().index == index)
+                            {
+                                bestNextMoves.Insert(0, obj);
+                            }
+                        }
+                    }
                 }
-                else
+                if (seq.playerConsecutive == 2)
                 {
-                    consecutive = 0;
+                    foreach (var index in seq.sequence)
+                    {
+                        // put on top of list
+                        foreach (var obj in availablePicks)
+                        {
+                            if (obj.GetComponent<TicTacToeTrigger>().index == index)
+                            {
+                                bestNextMoves.Insert(0, obj);
+                            }
+                        }
+                    }
                 }
             }
         }
+
+        if (bestNextMoves.Count > 0)
+        {
+            Debug.Log("Best Next Move : ", bestNextMoves[0]);
+            return bestNextMoves[0];
+        }
+        else
+        {
+            return null;
+        }
     }
-
-    private void EndGame()
-    {
-        foreach (var piece in instantiatedPieces)
-            Destroy(piece.gameObject);
-
-        InitGame();
-    }
-
 }
